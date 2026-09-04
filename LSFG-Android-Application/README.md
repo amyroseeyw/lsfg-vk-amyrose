@@ -1,323 +1,732 @@
-# LSFG-Android-Application
+<div align="center">
 
-The Android app that drives the patched [`lsfg-vk-android`](../lsfg-vk-android/)
-framegen library. It picks up a user-supplied `Lossless.dll`, extracts the
-SPIR-V shaders on-device, captures the screen via `MediaProjection`, runs
-Lossless Scaling frame generation on the captured stream, and composites the
-generated frames into a system overlay sitting on top of the target game.
+# LSFG Android Application — A6xx Compatibility
+
+<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=600&size=20&pause=1000&center=true&vCenter=true&width=680&lines=Frame+Generation+on+Android;A6xx+Compatibility;MediaProjection+%2B+Vulkan;Tested+on+Adreno+619" />
+
+<br>
+
+![Android](https://img.shields.io/badge/Android-10%2B-brightgreen?logo=android)
+![Architecture](https://img.shields.io/badge/Architecture-ARM64-blue)
+![Vulkan](https://img.shields.io/badge/API-Vulkan-red)
+![A6xx](https://img.shields.io/badge/Compatibility-A6xx-purple)
+![Kotlin](https://img.shields.io/badge/UI-Kotlin%20%2B%20Compose-orange)
+![Native](https://img.shields.io/badge/Backend-C%2B%2B-blueviolet)
+
+### Android frontend and native runtime for LSFG
+
+Capture • Frame Generation • Overlay • Pacing • A6xx
+
+</div>
+
+---
+
+## About
+
+This is the Android application that drives the patched
+[`lsfg-vk-android`](../lsfg-vk-android/) frame-generation backend.
+
+The application:
+
+- loads a user-supplied `Lossless.dll`
+- extracts the required shaders on-device
+- captures the target game through `MediaProjection`
+- shares frames through `AHardwareBuffer`
+- processes them through the LSFG Vulkan pipeline
+- presents generated frames through an Android overlay
+
+The visible frame path can be summarized as:
+
+```text
+Game
+ ↓
+MediaProjection
+ ↓
+VirtualDisplay
+ ↓
+ImageReader
+ ↓
+AHardwareBuffer
+ ↓
+Vulkan / LSFG
+ ↓
+Generated Frames
+ ↓
+System Overlay
+
+```
+
+No modification of the target game is required.
+
+---
+
+## A6xx Compatibility
+
+This fork contains compatibility changes focused on Qualcomm
+**A6xx GPUs**.
+
+The current stable implementation has been physically tested on:
+
+| Device | SoC | GPU | Status |
+|---|---|---|---|
+| Moto G34 | Snapdragon 695 | Adreno 619 | ✅ Working |
+
+Confirmed on the tested device:
+
+- LSFG initialization
+- real frame generation
+- generated-frame presentation
+- 2x / 3x / 4x modes
+- Performance Mode
+- Low Latency Mode
+- Flow Scale
+- pacing controls
+- Real / Generated / Total FPS monitoring
 
 > [!NOTE]
-> Sideload-only. End-to-end frame generation works on Adreno 7xx-class GPUs
-> and newer (Snapdragon 8 Gen 2 / Gen 3 / Gen 4 verified). Older Adreno and
-> most Mali devices are missing `VK_EXT_robustness2` and fall back to
-> capture-only mirror mode (the overlay still shows the game, no
-> interpolation).
+> Other A6xx GPUs are still considered experimental until tested on
+> physical hardware.
 
-## What's in the box
+Compatibility is capability-based rather than relying only on the GPU name.
 
-### Capture and overlay
+Different Android versions, OEM drivers, stock ROMs, custom ROMs and GSIs
+may behave differently.
 
-- **MediaProjection capture** through `VirtualDisplay` + `ImageReader`,
-  delivering AHardwareBuffer-backed frames straight into the native render
-  loop.
-- **Overlay host**: `SYSTEM_ALERT_WINDOW` by default, or
-  `TYPE_ACCESSIBILITY_OVERLAY` when the user enables `LsfgAccessibilityService`.
-  The accessibility-overlay path is the recommended opt-in for OEMs with
-  strict untrusted-touch filters or aggressive background killers.
-- **TextureView output** with a Vulkan swapchain composition path on top of
-  the CPU-blit fallback.
-- **Touch passthrough at full opacity** via an empty `TOUCHABLE_INSETS_REGION`
-  rather than `FLAG_NOT_TOUCHABLE` (which AOSP would clamp to 0.8 alpha).
-- **Rotation- and immersive-mode-aware** overlay placement and re-layout.
+---
 
-### Frame generation
+## What's included
 
-- **LSFG_3_1 / LSFG_3_1P** running on framegen's internal Vulkan device,
-  fed AHardwareBuffers shared from the app's session.
-- **Multiplier** 2× to 8×.
-- **Flow scale** 0.25 to 1.0.
-- **Performance mode**, **HDR mode**, **anti-artifacts**, **bypass**.
-- **Live re-init** on parameter change, serialized so concurrent slider
-  releases don't drop the session.
+### Capture & Overlay
 
-### Pacing
+- **MediaProjection capture**
+- `VirtualDisplay` + `ImageReader`
+- AHardwareBuffer-backed captured frames
+- system overlay over the target application
+- `SYSTEM_ALERT_WINDOW` overlay support
+- optional `TYPE_ACCESSIBILITY_OVERLAY`
+- Vulkan swapchain presentation path
+- CPU fallback presentation path
+- orientation-aware overlay handling
+- immersive-mode handling
 
-- **Vsync alignment** with configurable slack and per-slot budget.
-- **Pacing presets** for common targets, plus a manual target FPS cap.
-- **Queue depth**, **EMA alpha** for jitter smoothing, outlier rejection.
-- **Frame graph HUD** with frame-time graph and a `real X fps / total Y fps`
-  counter (`total = capture × multiplier` when active, `total = capture` when
-  bypassed or framegen failed to initialize).
+The capture path feeds AHardwareBuffers directly into the native render loop.
 
-### UX
+---
 
-- **First-launch tutorial** — multi-step walkthrough with screenshots covering
-  Accessibility setup (LSFG Touch Passthrough service, the Restricted-Settings
-  unblock that sideloaded apps need on Android 13+) and the in-game overlay
-  menu. Gated on a one-time preference so it doesn't replay every launch.
-- **Settings drawer** in-game, with two entry modes (icon-button or edge-swipe)
-  and four selectable edges. The collapsed strip is narrow and lets touches
-  pass through to the game; swipe inward to expand.
-- **Automatic per-app overlay** — pick target apps and the overlay arms when
-  one of them comes to the foreground.
-- **Draggable launcher dot** with edge snapping.
-- **Crash reporter** capturing both Java/Kotlin uncaught exceptions and native
-  signals (SIGSEGV, SIGABRT, ...) with stack-walking. Surfaces a one-shot
-  dialog on the next launch with a one-tap share intent for bug reports.
+## Frame Generation
 
-### Capture sources
+The application drives:
 
-- **MediaProjection** — always used for the visible frames. Consent prompt
-  on every session start. This is the default source.
-- **Shizuku metrics mode** — still uses MediaProjection for the visible video
-  path. In parallel, Shizuku binds a user service for the selected target UID
-  and provides a privileged timing-only side channel that's fed to native via
-  `reportShizukuTiming` for pacing decisions. Shizuku buffers are never made
-  visible, so a broken or black privileged buffer cannot blackout the
-  overlay.
+```text
+LSFG_3_1
+LSFG_3_1P
+```
+
+through the native `lsfg-vk-android` backend.
+
+Available runtime controls include:
+
+- 2x / 3x / 4x Frame Generation
+- Flow Scale
+- Performance Mode
+- HDR Mode
+- Anti-Artifacts
+- Bypass
+- Low Latency
+- live LSFG parameter changes
+
+Some parameter changes require the native LSFG context to be recreated,
+while lighter settings can be applied without restarting the entire session.
+
+---
+
+## Frame Pacing
+
+The application contains a configurable pacing system for controlling when
+generated frames are presented.
+
+Available controls include:
+
+- VSync alignment
+- VSync slack
+- target FPS cap
+- pacing presets
+- Queue Depth
+- EMA Alpha
+- outlier rejection
+- Low Latency mode
+
+The HUD exposes live information such as:
+
+```text
+Real FPS
+Generated FPS
+Total FPS
+Latency
+Queue
+Frame-time graph
+```
+
+This makes it possible to observe how different LSFG and pacing parameters
+affect frame generation in real time.
+
+---
+
+## In-Game Overlay
+
+The overlay provides access to LSFG controls without leaving the target game.
+
+It supports:
+
+- live settings drawer
+- configurable drawer edge
+- compact launcher
+- automatic per-app overlay
+- frame graph HUD
+- runtime parameter changes
+- real/generated/total FPS monitoring
+
+The overlay is displayed independently from the target game's rendering
+process.
+
+---
+
+## Touch Passthrough
+
+Android overlay input behavior varies between Android versions and OEMs.
+
+The application contains touch-passthrough infrastructure using:
+
+```text
+SYSTEM_ALERT_WINDOW
+TYPE_ACCESSIBILITY_OVERLAY
+TOUCHABLE_INSETS_REGION
+```
+
+The Accessibility path can be enabled on devices where the normal application
+overlay encounters stricter touch filtering.
+
+> [!NOTE]
+> Touch behavior is still device-dependent and some upstream touch issues may
+> remain.
+
+---
+
+## Capture Sources
+
+### MediaProjection
+
+MediaProjection is always used for the visible capture path.
+
+The user must explicitly approve screen capture when starting a new session.
+
+```text
+Target App
+ ↓
+MediaProjection
+ ↓
+ImageReader
+ ↓
+AHardwareBuffer
+ ↓
+Native LSFG
+```
+
+### Shizuku Metrics
+
+When enabled, Shizuku can provide additional privileged timing information
+used for pacing diagnostics.
+
+The visible frame stream still comes from MediaProjection.
+
+Shizuku buffers are not used as the displayed LSFG video path.
+
+---
 
 ## Architecture
 
-### Session flow
+### Session Flow
 
-The critical sequence in `LsfgForegroundService.handleStart`:
+The main LSFG session follows approximately this sequence:
 
-1. Start the foreground service with type `mediaProjection|specialUse` and
-   post the persistent notification **first** (FGS rules).
-2. Acquire the `MediaProjection` token from the consent intent that
-   `MainActivity` collected.
-3. `OverlayManager.show()` adds the overlay view via `WindowManager`.
-4. **Wait for `onSurfaceReady` before starting capture.** Surface creation is
-   async; launching the target app before the surface is valid leaves the
-   overlay empty on PowerVR and some OEMs.
-5. Start `CaptureEngine` (MediaProjection → VirtualDisplay → ImageReader →
-   AHardwareBuffer) and, when enabled, `ShizukuCaptureEngine` for the
-   privileged timing side channel. Then launch the target app via
-   `Intent.ACTION_MAIN` and re-assert z-order.
+```text
+Start Foreground Service
+        ↓
+Acquire MediaProjection
+        ↓
+Create Overlay
+        ↓
+Wait for Output Surface
+        ↓
+Start CaptureEngine
+        ↓
+Receive AHardwareBuffer
+        ↓
+Native Vulkan Session
+        ↓
+LSFG Frame Generation
+        ↓
+Present Generated Output
+```
 
-Surface lifecycle is event-driven: `onSurfaceReady(surface, w, h)` can fire
-multiple times (orientation / immersive changes), and the service coalesces
-duplicate events using `lastSurface` / `lastSurfaceW` / `lastSurfaceH`
-identity checks to avoid retargeting the VirtualDisplay onto an identical
-Surface (which freezes the overlay on PowerVR).
+Waiting for the output surface before capture starts is important because
+Android surface creation is asynchronous.
 
-### JNI ↔ native
+---
 
-All JNI lives in `session/NativeBridge.kt` ↔ `cpp/lsfg_jni.cpp`. The native
-entry points are a thin shim over `cpp/lsfg_render_loop.cpp`, which owns a
-worker thread and:
+## JNI & Native Backend
 
-- holds a persistent `VulkanSession` (our own device, managed through a
-  per-session `VolkDeviceTable` so framegen's internal `volkLoadDevice`
-  doesn't clobber our function pointers);
-- imports each `ImageReader` AHardwareBuffer into our session, performs a
-  `FOREIGN_EXT` queue-family ownership transfer, and hands it to framegen via
-  `LSFG_3_1::createContextFromAHB` so both devices read the same AHB
-  (Adreno/Mali drivers refuse `vkGetMemoryFdKHR` on AHB-imported memory,
-  which is why the FD path from upstream is unusable here);
-- runs `presentContext`, syncs across devices via `LSFG_3_1::waitIdle()`
-  (Vulkan defines no cross-device semaphore), and delivers each output AHB
-  to the overlay's `ANativeWindow`.
+The Kotlin application communicates with the native runtime through JNI.
 
-### Re-init coordination
+Main bridge:
 
-Live parameter changes from the settings drawer require a full native context
-rebuild (`destroyContext` → `initContext`). `LsfgForegroundService` serializes
-these through `reinitInFlight` / `reinitRequested` flags:
+```text
+session/NativeBridge.kt
+        ↕ JNI
+cpp/lsfg_jni.cpp
+        ↓
+cpp/lsfg_render_loop.cpp
+```
 
-- Only one re-init runs at a time.
-- A change during an in-flight re-init sets `reinitRequested` and the worker
-  re-runs once done, picking up the freshest preferences. Without this,
-  mid-re-init changes were silently dropped.
-- `shuttingDown` is set in `onDestroy` and future re-init requests are
-  dropped; `onDestroy` waits up to 1.5 s for an in-flight re-init before
-  calling `shutdownRenderLoop()` to avoid racing `destroyContext` against a
-  worker that is still starting up.
+The native render loop is responsible for:
 
-Anything that does **not** need a Vulkan rebuild (bypass, anti-artifacts,
-vsync period, pacing tunables, Shizuku timing) has a dedicated hot-apply JNI
-entry — preferred whenever possible. Only parameters that change Vulkan
-allocations bump the full re-init path.
+- Vulkan initialization
+- AHardwareBuffer import
+- framegen context creation
+- shader execution
+- synchronization
+- generated-frame output
+- presentation
 
-### Overlay and touch passthrough
+The Android application and LSFG backend may use separate Vulkan devices while
+sharing AHardwareBuffers between them.
 
-`OverlayManager` does **not** set `FLAG_NOT_TOUCHABLE` because AOSP clamps
-`TYPE_APPLICATION_OVERLAY` to 0.8 alpha when that flag is set. Instead an
-empty `TOUCHABLE_INSETS_REGION` tells `InputDispatcher` no pixel is touchable,
-which passes events through at full opacity. When the user enables
-`LsfgAccessibilityService`, the overlay is hosted from the accessibility
-context as `TYPE_ACCESSIBILITY_OVERLAY`, which is more robust against OEM
-background-killers and strict-touch filters. The accessibility service's
-gesture-forwarding implementation is stubbed — only the passthrough and
-z-order wiring is in place.
+---
 
-### Shader pipeline
+## AHardwareBuffer
 
-On first DLL selection: `ShaderExtractor` → native `extractShaders` →
-`android_shader_loader.cpp` parses the PE via `pe-parse`, translates each
-DXBC resource via DXVK's `dxbc` library, and writes one `.spv` per resource
-ID into `filesDir/spirv/`. Then `probeShaders` runs a headless Vulkan 1.1
-device and calls `vkCreateShaderModule` on every blob to catch driver
-rejection before the full pipeline is attempted. The `Lossless.dll` copy is
-deleted after extraction.
+Android cannot simply reuse every Linux external-memory path used by
+`lsfg-vk`.
+
+Instead, captured Android buffers are passed through:
+
+```text
+AHardwareBuffer*
+```
+
+and imported directly into Vulkan.
+
+The backend uses Android Vulkan external-memory support to make these buffers
+available to LSFG.
+
+This allows the same captured image to move through:
+
+```text
+ImageReader
+ ↓
+AHardwareBuffer
+ ↓
+Host Vulkan
+ ↓
+LSFG Vulkan
+ ↓
+Generated Output
+```
+
+without needing to modify the target application.
+
+---
+
+## A6xx Vulkan Fallbacks
+
+Older Qualcomm drivers may expose fewer Vulkan capabilities than newer
+Adreno hardware.
+
+The A6xx compatibility work therefore contains fallback paths where a safe
+alternative exists.
+
+The current compatibility work includes support for situations such as:
+
+- Vulkan 1.1-class devices
+- runtime Vulkan capability probing
+- synchronization without timeline semaphores
+- fence / binary semaphore fallback paths
+- AHardwareBuffer-based image sharing
+- descriptor fallback behavior
+- older Qualcomm Vulkan implementations
+
+The goal is to reject a device only when a genuinely required capability is
+unavailable.
 
 > [!IMPORTANT]
-> Do not commit the DLL or extracted SPIR-V. This app is sideload-only and
-> the DLL is not redistributable.
+> A6xx compatibility does not mean every A6xx GPU or OEM driver is guaranteed
+> to work.
+>
+> Physical device testing is still required.
 
-## Project layout
+---
 
+## Context Reinitialization
+
+Some LSFG parameters require rebuilding the native context.
+
+Conceptually:
+
+```text
+Setting Changed
+      ↓
+Request Re-init
+      ↓
+Destroy Context
+      ↓
+Initialize Context
+      ↓
+Resume Frame Generation
 ```
-LSFG-Android-Application/                       # Android Studio project root
-  app/
-    src/main/
-      java/com/lsfg/android/
-        ui/                         # Compose screens + navigation
-                                    #   MainActivity, LsfgNavHost, HomeScreen,
-                                    #   ParamsScreen, DllPickerScreen,
-                                    #   AppPickerScreen, AutomaticOverlayScreen,
-                                    #   TutorialScreen, ProjectionRequestActivity,
-                                    #   LegalScreen, theme/, components
-        session/                    # Foreground service, overlay, capture,
-                                    #   accessibility, settings drawer,
-                                    #   crash reporter, JNI bridge
-        prefs/                      # SharedPreferences-backed config + enums
-                                    #   (CaptureSource, OverlayMode, DrawerEdge,
-                                    #   NpuPostProcessingPreset, etc.)
-        LsfgApplication.kt
-        FeatureFlags.kt, AppIconLoader.kt
-      aidl/com/lsfg/android/shizuku/   # Shizuku user-service AIDL
-      cpp/                          # JNI + CMake — pulls in
-                                    #   ../../../../../lsfg-vk-android/framegen/
-        lsfg_jni.cpp                # JNI entry points
-        lsfg_render_loop.cpp        # Worker thread, framegen wiring, presentation
-        android_vk_session.cpp      # Persistent Vulkan device + VolkDeviceTable
-        android_vk_probe.cpp        # Headless Vulkan smoke test for shaders
-        android_shader_loader.cpp   # DXBC -> SPIR-V extraction + name->id map
-        ahb_image_bridge.cpp        # AHardwareBuffer <-> VkImage import
-        nnapi_npu.cpp               # NNAPI runtime wrapper
-        nnapi_postprocess.cpp       # NPU post-processing stage
-        gpu_postprocess.cpp         # GPU post-processing stage
-        cpu_postprocess.cpp         # CPU enhancement stage
-        crash_reporter.cpp          # Native signal handlers + ring log
-        unicode_minimal.cpp         # String utilities
-        CMakeLists.txt
-      res/                          # strings, themes, drawables (tutorial
-                                    #   step images, launcher icon),
-                                    #   accessibility + data-extraction XML
-      AndroidManifest.xml
-    build.gradle.kts
-  settings.gradle.kts
-  build.gradle.kts
-  gradle.properties
+
+The application serializes these operations so multiple rapid setting changes
+do not create overlapping native context rebuilds.
+
+Settings that do not require Vulkan allocations can use lighter hot-apply
+paths instead.
+
+---
+
+## Shader Pipeline
+
+The application does **not** distribute Lossless Scaling shaders.
+
+When the user selects their legitimate `Lossless.dll`:
+
+```text
+Lossless.dll
+ ↓
+ShaderExtractor
+ ↓
+Native PE Parser
+ ↓
+DXBC Resources
+ ↓
+SPIR-V
+ ↓
+Vulkan Shader Validation
 ```
+
+The extracted shaders are stored in the application's private storage.
+
+The temporary DLL copy is removed after extraction.
+
+> [!IMPORTANT]
+> Never commit or redistribute:
+>
+> - `Lossless.dll`
+> - extracted proprietary shaders
+> - proprietary Lossless Scaling assets
+>
+> Users must provide their own legitimate copy.
+
+---
+
+## Project Structure
+
+```text
+LSFG-Android-Application/
+│
+├── app/
+│   ├── src/main/
+│   │
+│   ├── java/com/lsfg/android/
+│   │   ├── ui/
+│   │   ├── session/
+│   │   └── prefs/
+│   │
+│   ├── cpp/
+│   │   ├── lsfg_jni.cpp
+│   │   ├── lsfg_render_loop.cpp
+│   │   ├── android_vk_session.cpp
+│   │   ├── android_vk_probe.cpp
+│   │   ├── android_shader_loader.cpp
+│   │   ├── ahb_image_bridge.cpp
+│   │   ├── nnapi_npu.cpp
+│   │   ├── nnapi_postprocess.cpp
+│   │   ├── gpu_postprocess.cpp
+│   │   ├── cpu_postprocess.cpp
+│   │   ├── crash_reporter.cpp
+│   │   └── CMakeLists.txt
+│   │
+│   ├── res/
+│   └── AndroidManifest.xml
+│
+├── build.gradle.kts
+├── settings.gradle.kts
+├── gradle.properties
+└── gradlew
+```
+
+---
+
+## Main Components
+
+### `ui/`
+
+Jetpack Compose interface.
+
+Contains:
+
+- main application UI
+- navigation
+- configuration screens
+- application picker
+- DLL picker
+- tutorial
+- projection request flow
+- legal screen
+
+### `session/`
+
+Runtime Android services.
+
+Contains:
+
+- foreground service
+- MediaProjection handling
+- CaptureEngine
+- overlay manager
+- Accessibility integration
+- settings drawer
+- crash reporting
+- JNI bridge
+
+### `cpp/`
+
+Native runtime.
+
+Contains:
+
+- JNI
+- Vulkan
+- AHardwareBuffer handling
+- LSFG render loop
+- shader extraction
+- post-processing scaffolding
+- crash handling
+
+---
 
 ## Build
 
+From the application directory:
+
 ```sh
-cd LSFG-Android-Application        # this directory
-./gradlew :app:assembleDebug         # or :app:assembleRelease
+cd LSFG-Android-Application
+./gradlew :app:assembleDebug
 ```
 
-The APK lands in `app/build/outputs/apk/debug/`. Install with `adb install`.
+Build Release:
 
-Toolchain: Android Studio Ladybug+, NDK 27.0.12077973, CMake 3.22.1, JDK 17,
-C++20, Kotlin Compose plugin. ABIs: `arm64-v8a` (production) and `x86_64`
-(emulator only). `minSdk=29` (Android 10), `targetSdk=35` (Android 15).
+```sh
+./gradlew :app:assembleRelease
+```
 
-Release signing is driven by `gradle.properties` (`LSFGAndroid_STORE_FILE`,
-`LSFGAndroid_STORE_PASSWORD`, `LSFGAndroid_KEY_ALIAS`,
-`LSFGAndroid_KEY_PASSWORD`). If those properties are absent the release
-build falls back to the debug signing config.
+The project uses:
 
-## Required device features
+```text
+Kotlin
+Jetpack Compose
+C++
+JNI
+Vulkan
+AHardwareBuffer
+CMake
+Android NDK
+Gradle
+```
 
-- **Vulkan 1.2+**.
-- `VK_ANDROID_external_memory_android_hardware_buffer`.
-- `VK_KHR_external_memory` + `VK_KHR_sampler_ycbcr_conversion`.
-- **`VK_EXT_robustness2`** — required by framegen for `nullDescriptor`.
-  Available on recent Adreno (≥ 7xx-class). If absent, the session creates
-  fine but `LSFG_3_1::initialize` throws and the app falls back to
-  capture-only mirror mode.
-- `VK_EXT_queue_family_foreign` — recommended; used for AHB ownership
-  transitions. Falls back to `VK_QUEUE_FAMILY_EXTERNAL` when absent.
+The native frame-generation backend is compiled together with the Android
+application.
 
-The app checks for these at startup and surfaces an actionable error if the
-device doesn't support the mandatory ones.
+---
+
+## Release Builds
+
+Release builds may use:
+
+- R8
+- code minification
+- resource shrinking
+- ARM64-only packaging
+- release signing
+
+These optimizations reduce APK size without changing the intended LSFG
+frame-generation pipeline.
+
+Signing credentials and keystores should never be committed to the repository.
+
+---
+
+## Device Requirements
+
+Minimum requirements include:
+
+- Android 10+
+- ARM64 device
+- Vulkan support
+- Android AHardwareBuffer Vulkan support
+- screen capture support
+- overlay support
+
+The application checks runtime Vulkan capabilities before LSFG initialization.
+
+The A6xx compatibility path provides fallbacks for several capabilities that
+may not exist on older Qualcomm Vulkan drivers.
+
+---
 
 ## Permissions
 
-| Permission | Why |
+| Permission / API | Purpose |
 |---|---|
-| `SYSTEM_ALERT_WINDOW` | Host the overlay over the target game. |
-| `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Run the visible capture path. |
-| `FOREGROUND_SERVICE_SPECIAL_USE` | Run the Shizuku-only timing path without holding a MediaProjection token (subtype: `lsfg_shizuku_capture_pacing`). |
-| `POST_NOTIFICATIONS` | Persistent foreground-service notification. |
-| `BIND_ACCESSIBILITY_SERVICE` (optional) | Host the overlay as `TYPE_ACCESSIBILITY_OVERLAY` — more robust on strict OEMs. |
-| `moe.shizuku.manager.permission.API_V23` (optional) | Shizuku metrics mode. |
-| MediaProjection consent | Granted by the user on every session start. |
+| `SYSTEM_ALERT_WINDOW` | Display LSFG output over the target game |
+| `FOREGROUND_SERVICE_MEDIA_PROJECTION` | Run screen capture |
+| `FOREGROUND_SERVICE_SPECIAL_USE` | Support additional foreground runtime functionality |
+| `POST_NOTIFICATIONS` | Foreground-service notification |
+| `BIND_ACCESSIBILITY_SERVICE` | Optional Accessibility overlay / touch path |
+| Shizuku permission | Optional privileged timing diagnostics |
+| MediaProjection consent | Capture the screen during an LSFG session |
 
-## Limitations
+---
 
-- **No swapchain hooking on non-rooted Android.** Android 12+ blocks loading
-  external code into non-debuggable processes, so this app cannot inject into
-  a target game's Vulkan swapchain. It runs frame generation on a
-  `MediaProjection` capture instead.
-- **MediaProjection adds latency** (~50–80 ms typical, plus the cost of the
-  CPU blit when the swapchain output path is unavailable).
-- **Google Play policy.** `SYSTEM_ALERT_WINDOW` + screen capture +
-  `AccessibilityService` together violate Play policy. This app is
-  distributable only as a sideloaded APK.
-- **User-supplied `Lossless.dll`.** The user must own a legitimate Steam copy
-  and provide the DLL via the Storage Access Framework on first launch.
-- For the full-quality on-GPU experience as on Linux, a Magisk module that
-  installs a Vulkan implicit layer into `/system/etc/vulkan/implicit_layer.d/`
-  would be the only realistic path. It is not included here.
+## Compatibility Testing
 
-## TO-DO
+When reporting compatibility results, include:
 
-Work in progress, not yet complete. The native scaffolding is in the tree
-(`cpu_postprocess.cpp`, `gpu_postprocess.cpp`, `nnapi_npu.cpp`,
-`nnapi_postprocess.cpp`) but the corresponding settings UI is currently
-hidden because the pipelines still need to be wired up and tuned end-to-end:
+```text
+Device:
+SoC:
+GPU:
+Android version:
+Stock ROM / Custom ROM / GSI:
+Vulkan API:
+Vulkan driver:
+LSFG multiplier:
+Performance Mode:
+Low Latency:
+Real FPS:
+Generated FPS:
+Total FPS:
+Result:
+```
 
-- **NPU post-processing** via NNAPI (planned presets: sharpen, detail boost,
-  chroma clean, game crisp). Requires NNAPI hardware acceleration on the
-  device.
-- **GPU post-processing** stage (upscaling / image-blit pass on top of the
-  framegen output).
-- **CPU post-processing** kernels (LUT, vibrance, saturation, vignette).
-- **Zero-copy output blit**: the swapchain output path covers most cases,
-  but the CPU-blit fallback could be replaced with a direct AHB-to-AHB
-  import for energy efficiency.
+Physical testing is especially useful for expanding A6xx support.
+
+---
+
+## Known Limitations
+
+LSFG Android uses Android screen capture instead of directly hooking into
+the target application's Vulkan swapchain.
+
+Because of this:
+
+- additional latency compared with native desktop LSFG is expected
+- MediaProjection permission is required
+- overlay behavior varies between Android implementations
+- touch passthrough can vary between OEMs
+- Vulkan drivers behave differently across devices
+- GSIs may behave differently from stock ROMs
+- some upstream LSFG-Android issues may still remain
+- compatibility with untested A6xx GPUs is not guaranteed
+
+---
+
+## Work in Progress
+
+Some native infrastructure already exists for future image-processing features.
+
+These areas are still experimental or incomplete:
+
+- NNAPI / NPU post-processing
+- GPU post-processing
+- upscaling
+- CPU image enhancement
+- LUT processing
+- vibrance / saturation adjustments
+- zero-copy output improvements
+
+These features should not be considered stable until fully integrated and
+tested.
+
+---
+
+## Security & Distribution
+
+The application uses several Android APIs that can trigger warnings from
+Android or security scanners, including:
+
+- MediaProjection
+- system overlays
+- AccessibilityService
+- native JNI libraries
+- Vulkan
+- optional Shizuku integration
+
+These APIs are used for the application's capture, overlay and frame-generation
+functionality.
+
+The application does not require `Lossless.dll` to be bundled into the APK.
+
+---
+
+## Credits
+
+This project would not exist without:
+
+### FrankBarretta
+
+[`FrankBarretta/LSFG-Android`](https://github.com/FrankBarretta/LSFG-Android)
+
+Creator of the original Android port, including its MediaProjection capture
+pipeline, overlay system, Kotlin/Compose application, JNI integration and
+Android frame-generation architecture.
+
+### PancakeTAS & lsfg-vk Contributors
+
+[`PancakeTAS/lsfg-vk`](https://github.com/PancakeTAS/lsfg-vk)
+
+Creators and contributors of the original Linux Vulkan LSFG implementation
+that forms the foundation of the native backend.
+
+### THS / Lossless Scaling
+
+Creators of **Lossless Scaling** and its frame-generation technology.
+
+Lossless Scaling assets are not distributed by this project.
+
+---
 
 ## License
 
-This app — that is, everything inside the `LSFG-Android-Application/` directory — is
-released under a **Custom License: No Play Store, No Commercial Use**. See
-[`LICENSE`](LICENSE) in this directory for the full terms. In short:
+The LSFG Android Application is distributed under the
+**GNU General Public License v3.0 (GPL-3.0)**.
 
-- **Personal, non-commercial use** is permitted.
-- **Modification and redistribution** in source or binary form are permitted
-  for non-commercial purposes, provided the license text is reproduced and
-  attribution is preserved.
-- **Publishing on Google Play, the App Store, or any other commercial /
-  curated mobile application marketplace is NOT permitted.** The app is
-  sideload-only by design and by license.
-- **Commercial use is NOT permitted** — no paid distribution, no paid
-  bundling, no paid services, no monetization (ads, paywalls, sponsorships,
-  donation walls inside the app).
-- The app does not bundle `Lossless.dll` or any extracted Lossless Scaling
-  shaders, and redistributing it together with such proprietary assets is
-  not permitted under this license.
+See [`LICENSE`](LICENSE) for the complete license terms.
 
-The patched [`lsfg-vk-android`](../lsfg-vk-android/) submodule one directory
-above is licensed separately under the **MIT License** (inherited from
-upstream `lsfg-vk`). See [`../lsfg-vk-android/LICENSE.md`](../lsfg-vk-android/LICENSE.md).
-The repository root is also MIT, scoped to its top-level files only — see
-[`../LICENSE`](../LICENSE) and [`../README.md`](../README.md).
+The `lsfg-vk-android` component is licensed separately under the MIT License.
 
-`Lossless.dll` is **not** part of this project. It is the property of its
-copyright holder (THS / Lossless Scaling). This project does not distribute,
-redistribute, or bundle any part of `Lossless.dll`. Users must provide their
-own copy from a legitimately purchased Steam license.
+Always preserve the original license files, copyright notices and attribution
+when redistributing this project.
+
+`Lossless.dll` and proprietary Lossless Scaling assets are not distributed
+by this project.
+
+---
+
+<div align="center">
+
+## LSFG Android Application — A6xx Compatibility
+
+**Kotlin • Vulkan • AHardwareBuffer • Frame Generation • A6xx**
+
+Built on top of LSFG-Android and lsfg-vk.
+
+</div>
