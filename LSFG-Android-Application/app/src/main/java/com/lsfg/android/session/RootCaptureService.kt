@@ -55,30 +55,32 @@ class RootCaptureService : RootService() {
             periodMs: Long,
             callback: IShizukuFrameCallback,
         ) {
-            val capture = runCatching { PrivilegedScreenCapture(width, height, targetUid) }
+            Log.i(TAG, "ROOT_START uid=${android.os.Process.myUid()} targetUid=$targetUid sdk=${android.os.Build.VERSION.SDK_INT}")
+            val capture = runCatching { PrivilegedScreenCapture(width, height, targetUid, "ROOT") }
                 .getOrElse { e ->
                     Log.w(TAG, "Unable to initialize privileged capture", e)
-                    callback.onError("Root capture unavailable: ${e.message ?: e.javaClass.simpleName}")
+                    callback.onError("ROOT_ERROR capture init: ${e.message ?: e.javaClass.simpleName}")
                     running.set(false)
                     return
                 }
 
             var lastFrameNs = 0L
             val targetPeriodNs = periodMs * 1_000_000L
-            var frameLogCount = 0
+            var firstFrame = true
             while (running.get()) {
                 val started = SystemClock.uptimeMillis()
                 val hb = runCatching { capture.captureHardwareBuffer() }
                     .onFailure {
                         Log.w(TAG, "captureHardwareBuffer failed", it)
-                        callback.onError("Root capture failed: ${it.message ?: it.javaClass.simpleName}")
+                        callback.onError("ROOT_ERROR capture: ${it.message ?: it.javaClass.simpleName}")
+                        running.set(false)
                     }
                     .getOrNull()
 
                 if (hb != null) {
-                    if (frameLogCount < 8) {
-                        frameLogCount++
-                        Log.i(TAG, "root frame #$frameLogCount uid=$targetUid ${hb.width}x${hb.height} fmt=${hb.format}")
+                    if (firstFrame) {
+                        firstFrame = false
+                        Log.i(TAG, "ROOT_FIRST_HARDWAREBUFFER ${hb.width}x${hb.height} fmt=${hb.format}")
                     }
                     val timestampNs = System.nanoTime()
                     val frameTimeNs = if (lastFrameNs > 0L) timestampNs - lastFrameNs else 0L
@@ -89,6 +91,7 @@ class RootCaptureService : RootService() {
                         callback.onFrame(hb, timestampNs)
                     } catch (t: Throwable) {
                         Log.w(TAG, "frame callback failed", t)
+                        callback.onError("ROOT_ERROR callback: ${t.message ?: t.javaClass.simpleName}")
                         running.set(false)
                     } finally {
                         runCatching { hb.close() }
@@ -105,6 +108,7 @@ class RootCaptureService : RootService() {
                     }
                 }
             }
+            Log.i(TAG, "ROOT_STOP")
         }
     }
 

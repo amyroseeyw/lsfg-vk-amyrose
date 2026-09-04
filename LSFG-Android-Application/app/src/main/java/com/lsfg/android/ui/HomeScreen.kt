@@ -31,6 +31,11 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.DisplaySettings
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.AutoMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +73,7 @@ import com.lsfg.android.ui.components.LsfgCard
 import com.lsfg.android.ui.components.LsfgLogoMark
 import com.lsfg.android.ui.components.LsfgSecondaryButton
 import com.lsfg.android.ui.components.SessionCTA
+import com.lsfg.android.ui.components.SectionHeader
 import com.lsfg.android.ui.components.StatusTone
 import com.lsfg.android.ui.components.StepCard
 import com.lsfg.android.ui.theme.LsfgPrimary
@@ -235,7 +241,7 @@ fun HomeScreen(nav: NavHostController) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(top = 12.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -259,6 +265,12 @@ fun HomeScreen(nav: NavHostController) {
                 )
             }
             IconChip(
+                icon = Icons.Filled.School,
+                tint = LsfgPrimary,
+                onClick = { nav.navigate(Routes.TUTORIAL) },
+            )
+            Spacer(Modifier.size(8.dp))
+            IconChip(
                 icon = Icons.Filled.Accessibility,
                 tint = if (a11yEnabled) LsfgStatusGood else LsfgStatusWarn,
                 onClick = {
@@ -268,26 +280,11 @@ fun HomeScreen(nav: NavHostController) {
                     )
                 },
             )
-            Spacer(Modifier.size(8.dp))
-            IconChip(
-                icon = Icons.Filled.BugReport,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = {
-                    val intent = CrashReporter.buildShareIntent(ctx)
-                    if (intent == null) {
-                        Toast.makeText(ctx, R.string.crash_export_none, Toast.LENGTH_SHORT).show()
-                    } else {
-                        ctx.startActivity(
-                            Intent.createChooser(intent, "Export diagnostic log")
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                        )
-                    }
-                },
-            )
         }
 
-        // Hero session card with CTA
-        LsfgCard(accent = true) {
+        // The session is intentionally the first actionable block, without the
+        // oversized hero treatment that used to push setup below the fold.
+        LsfgCard(accent = true, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
             SessionCTA(
                 running = false,
                 enabled = canStart,
@@ -303,7 +300,11 @@ fun HomeScreen(nav: NavHostController) {
                     }
                     val targetPkg = state.targetPackage
                     pendingTargetPkg = targetPkg
-                    if (targetPkg != null) {
+                    // MediaProjection's established baseline launches here. Root
+                    // and Shizuku launch only from the foreground service after
+                    // the output Surface is ready, avoiding an early target paint
+                    // before their privileged capture is armed.
+                    if (state.captureSource == CaptureSource.MEDIA_PROJECTION && targetPkg != null) {
                         ctx.packageManager.getLaunchIntentForPackage(targetPkg)?.let { launch ->
                             ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
@@ -392,8 +393,8 @@ fun HomeScreen(nav: NavHostController) {
 
         }
 
-        // Limitation notice
-        LsfgCard {
+        // Keep this required information visible but secondary to setup.
+        LsfgCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Box(
                     modifier = Modifier
@@ -453,6 +454,7 @@ fun HomeScreen(nav: NavHostController) {
             }
         }
 
+        SectionHeader(eyebrow = "Configuration", title = "Set up LSFG")
         // Steps — 5 cards grouped by concept (prerequisite → target → frame gen/pacing →
         // image quality → display). Post-process accelerators (GPU/NPU/CPU) are no longer
         // separate top-level steps; they share the "Image quality" screen.
@@ -465,6 +467,7 @@ fun HomeScreen(nav: NavHostController) {
 
         StepCard(
             number = 1,
+            icon = Icons.Filled.FileOpen,
             title = stringResource(R.string.nav_dll),
             subtitle = if (state.dllDisplayName != null)
                 state.dllDisplayName!!
@@ -478,6 +481,7 @@ fun HomeScreen(nav: NavHostController) {
 
         StepCard(
             number = 2,
+            icon = Icons.Filled.Apps,
             title = stringResource(R.string.nav_app),
             subtitle = state.targetPackage ?: "No app selected",
             status = if (state.targetPackage != null) StatusTone.Good else StatusTone.Neutral,
@@ -497,6 +501,7 @@ fun HomeScreen(nav: NavHostController) {
         }
         StepCard(
             number = 3,
+            icon = Icons.Filled.AutoAwesome,
             title = stringResource(R.string.nav_framegen_pacing),
             subtitle = frameGenSummary,
             status = if (state.lsfgEnabled) StatusTone.Good else StatusTone.Neutral,
@@ -517,6 +522,7 @@ fun HomeScreen(nav: NavHostController) {
                 state.cpuPostProcessingEnabled
             StepCard(
                 number = 4,
+                icon = Icons.Filled.AutoAwesome,
                 title = stringResource(R.string.nav_image_quality),
                 subtitle = imageQualitySummary,
                 status = if (imageQualityOn) StatusTone.Good else StatusTone.Neutral,
@@ -546,6 +552,7 @@ fun HomeScreen(nav: NavHostController) {
         }
         StepCard(
             number = if (SHOW_IMAGE_QUALITY) 5 else 4,
+            icon = Icons.Filled.DisplaySettings,
             title = stringResource(R.string.nav_overlay_display),
             subtitle = overlayDisplaySummary,
             status = StatusTone.Neutral,
@@ -565,6 +572,7 @@ fun HomeScreen(nav: NavHostController) {
         }
         StepCard(
             number = if (SHOW_IMAGE_QUALITY) 6 else 5,
+            icon = Icons.Filled.AutoMode,
             title = stringResource(R.string.nav_automatic_overlay),
             subtitle = autoSubtitle,
             status = if (autoCount > 0) StatusTone.Good else StatusTone.Neutral,
@@ -573,18 +581,12 @@ fun HomeScreen(nav: NavHostController) {
         )
 
         // Footer actions
-        LsfgCard {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LsfgCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp, horizontal = 8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 Text(
                     text = "MORE",
                     style = MaterialTheme.typography.labelSmall,
                     color = LsfgPrimary,
-                )
-                LsfgSecondaryButton(
-                    text = stringResource(R.string.nav_tutorial),
-                    onClick = { nav.navigate(Routes.TUTORIAL) },
-                    leadingIcon = Icons.Filled.School,
-                    modifier = Modifier.fillMaxWidth(),
                 )
                 LsfgSecondaryButton(
                     text = stringResource(R.string.benchmark_home_button),

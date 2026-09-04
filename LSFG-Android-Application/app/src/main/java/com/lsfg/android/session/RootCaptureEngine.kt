@@ -14,6 +14,7 @@ import com.lsfg.android.shizuku.IShizukuCaptureService
 import com.lsfg.android.shizuku.IShizukuFrameCallback
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
+import java.util.concurrent.atomic.AtomicBoolean
 
 class RootCaptureEngine(private val ctx: Context) {
 
@@ -24,6 +25,7 @@ class RootCaptureEngine(private val ctx: Context) {
     @Volatile private var service: IShizukuCaptureService? = null
     @Volatile private var pendingStart: StartArgs? = null
     @Volatile private var errorListener: ErrorListener? = null
+    @Volatile private var activeListener: (() -> Unit)? = null
     @Volatile private var metricsOnly: Boolean = false
     @Volatile private var fpsListener: CaptureEngine.FpsListener? = null
     @Volatile private var graphListener: CaptureEngine.FrameGraphListener? = null
@@ -42,12 +44,32 @@ class RootCaptureEngine(private val ctx: Context) {
     private var graphRealEma: Float = 0f
     private var graphGenEma: Float = 0f
     @Volatile private var everConnected: Boolean = false
+    @Volatile internal var state: PrivilegedCaptureState = PrivilegedCaptureState.IDLE
+        private set
+    private val binding = AtomicBoolean(false)
+    private val rootProbeInFlight = AtomicBoolean(false)
+    private val rootVerified = AtomicBoolean(false)
+    private val firstFrameToNative = AtomicBoolean(false)
+    private val errorReported = AtomicBoolean(false)
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder?) {
+            binding.set(false)
             everConnected = true
             service = binder?.takeIf { it.pingBinder() }
                 ?.let { IShizukuCaptureService.Stub.asInterface(it) }
+            val svc = service
+            if (svc == null) {
+                fail("ROOT_ERROR bind returned no live service")
+                return
+            }
+            val description = runCatching { svc.describeBackend() }
+                .getOrElse { "describeBackend failed: ${it.message ?: it.javaClass.simpleName}" }
+            LsfgLog.i(TAG, "ROOT_BIND_OK $description")
+            if (!description.contains("uid=0")) {
+                fail("ROOT_ERROR service is not uid=0: $description")
+                return
+            }
             pendingStart?.let { start ->
                 startCaptureInternal(start.targetPackage, start.width, start.height, start.maxFps)
             }
@@ -56,17 +78,19 @@ class RootCaptureEngine(private val ctx: Context) {
         override fun onServiceDisconnected(name: ComponentName) {
             val wasConnected = everConnected
             service = null
-            if (!wasConnected) {
-                errorListener?.onError("Root access denied or su not available")
+            if (state != PrivilegedCaptureState.STOPPING && state != PrivilegedCaptureState.IDLE) {
+                fail(if (wasConnected) "ROOT_ERROR service disconnected" else "ROOT_PERMISSION_FAIL access denied or su unavailable")
             }
         }
     }
 
     fun setErrorListener(listener: ErrorListener?) { errorListener = listener }
+    fun setActiveListener(listener: (() -> Unit)?) { activeListener = listener }
     fun setFpsListener(listener: CaptureEngine.FpsListener?) { fpsListener = listener }
     fun setFrameGraphListener(listener: CaptureEngine.FrameGraphListener?) { graphListener = listener }
 
-    fun isReady(): Boolean = Shell.isAppGrantedRoot() == true
+    /** A ready root backend has a shell that actually reported uid 0. */
+    fun isReady(): Boolean = rootVerified.get() || (Shell.getCachedShell()?.isRoot == true)
 
     fun startCapture(targetPackage: String, width: Int, height: Int, maxFps: Int) {
         metricsOnly = false
@@ -79,29 +103,38 @@ class RootCaptureEngine(private val ctx: Context) {
     }
 
     private fun startCaptureInternal(targetPackage: String, width: Int, height: Int, maxFps: Int) {
+        if (state == PrivilegedCaptureState.ERROR || state == PrivilegedCaptureState.STOPPING) return
+        LsfgLog.i(TAG, "ROOT_START permission=${Shell.isAppGrantedRoot()} sdk=${android.os.Build.VERSION.SDK_INT}")
         val targetUid = runCatching {
             ctx.packageManager.getApplicationInfo(targetPackage, 0).uid
         }.getOrElse {
-            errorListener?.onError("Target package not found: $targetPackage")
+            fail("ROOT_ERROR target package not found: $targetPackage")
             return
         }
 
         pendingStart = StartArgs(targetPackage, width, height, maxFps)
+        if (!rootVerified.get()) {
+            requestRootAndBind()
+            return
+        }
         val svc = service
         if (svc == null || !svc.asBinder().pingBinder()) {
             bind()
             return
         }
+        state = PrivilegedCaptureState.CAPTURE_STARTING
         runCatching {
             svc.startCapture(targetUid, width, height, maxFps, frameCallback)
+            pendingStart = null
             LsfgLog.i(TAG, "Root ${if (metricsOnly) "metrics" else "capture"} started pkg=$targetPackage uid=$targetUid ${width}x${height}")
         }.onFailure {
             LsfgLog.w(TAG, "Root startCapture failed", it)
-            errorListener?.onError("Root capture start failed: ${it.message ?: it.javaClass.simpleName}")
+            fail("ROOT_ERROR startCapture: ${it.message ?: it.javaClass.simpleName}")
         }
     }
 
     fun stop() {
+        state = PrivilegedCaptureState.STOPPING
         pendingStart = null
         stopFpsCounter()
         stopFrameGraph()
@@ -109,6 +142,11 @@ class RootCaptureEngine(private val ctx: Context) {
         runCatching { RootService.unbind(connection) }
         service = null
         everConnected = false
+        binding.set(false)
+        rootProbeInFlight.set(false)
+        rootVerified.set(false)
+        state = PrivilegedCaptureState.IDLE
+        LsfgLog.i(TAG, "ROOT_STOP")
     }
 
     fun pauseCapture() {
@@ -216,6 +254,38 @@ class RootCaptureEngine(private val ctx: Context) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * isAppGrantedRoot() is intentionally non-blocking and may be false before
+     * libsu has attempted su.  Do not use it as a denial: construct the real
+     * shell, which gives Magisk/APatch the opportunity to show its grant prompt,
+     * then verify the remote identity with a short `id -u` command.
+     */
+    private fun requestRootAndBind() {
+        if (!rootProbeInFlight.compareAndSet(false, true)) return
+        state = PrivilegedCaptureState.WAITING_PERMISSION
+        val cached = Shell.getCachedShell()
+        LsfgLog.i(TAG, "ROOT_SU_AVAILABLE cached=${cached != null} grantState=${Shell.isAppGrantedRoot()}")
+        LsfgLog.i(TAG, "ROOT_SU_REQUEST")
+        Shell.getShell(Shell.EXECUTOR) { shell ->
+            val result = runCatching { shell.newJob().add("id -u").exec() }
+            val uid = result.getOrNull()?.takeIf { it.isSuccess }?.out?.lastOrNull()?.trim()
+            rootProbeInFlight.set(false)
+            if (!shell.isRoot || uid != "0") {
+                val detail = result.exceptionOrNull()?.message
+                    ?: result.getOrNull()?.err?.joinToString(" ")
+                    ?: "shellStatus=${shell.status} uid=${uid ?: "unavailable"}"
+                fail("ROOT_PERMISSION_FAIL $detail")
+                return@getShell
+            }
+            rootVerified.set(true)
+            LsfgLog.i(TAG, "ROOT_UID uid=0")
+            LsfgLog.i(TAG, "ROOT_PERMISSION_OK")
+            mainHandler.post {
+                if (state != PrivilegedCaptureState.ERROR && state != PrivilegedCaptureState.STOPPING) bind()
+            }
+        }
+    }
+
     private fun bind() {
         // libsu's RootService.bind enforces main-thread invocation. start() may
         // be called from the foreground service's worker thread (e.g. on a
@@ -226,13 +296,17 @@ class RootCaptureEngine(private val ctx: Context) {
             mainHandler.post { bind() }
             return
         }
+        if (!binding.compareAndSet(false, true)) return
+        state = PrivilegedCaptureState.BINDING
         everConnected = false
         runCatching {
             val intent = Intent(ctx, RootCaptureService::class.java)
             RootService.bind(intent, connection)
+            LsfgLog.i(TAG, "ROOT_BINDING")
         }.onFailure {
+            binding.set(false)
             LsfgLog.w(TAG, "RootService.bind failed", it)
-            errorListener?.onError("Root service bind failed: ${it.message ?: it.javaClass.simpleName}")
+            fail("ROOT_BIND_FAIL: ${it.message ?: it.javaClass.simpleName}")
         }
     }
 
@@ -241,16 +315,24 @@ class RootCaptureEngine(private val ctx: Context) {
             fpsFrameCount++
             graphFrameCount++
             try {
-                if (!metricsOnly) NativeBridge.pushFrame(buffer, timestampNs)
+                if (!metricsOnly) {
+                    NativeBridge.pushFrame(buffer, timestampNs)
+                    if (firstFrameToNative.compareAndSet(false, true)) {
+                        state = PrivilegedCaptureState.ACTIVE
+                        LsfgLog.i(TAG, "ROOT_FIRST_FRAME_TO_NATIVE")
+                        activeListener?.invoke()
+                    }
+                }
             } catch (t: Throwable) {
                 LsfgLog.w(TAG, "pushFrame from root failed", t)
+                fail("ROOT_ERROR pushFrame: ${t.message ?: t.javaClass.simpleName}")
             } finally {
                 runCatching { buffer.close() }
             }
         }
 
         override fun onError(message: String?) {
-            errorListener?.onError(message ?: "Unknown root capture error")
+            fail(message ?: "ROOT_ERROR unknown capture error")
         }
 
         override fun onFrameMetrics(timestampNs: Long, frameTimeNs: Long, pacingJitterNs: Long) {
@@ -262,6 +344,14 @@ class RootCaptureEngine(private val ctx: Context) {
                 )
             }
         }
+    }
+
+    private fun fail(message: String) {
+        if (!errorReported.compareAndSet(false, true)) return
+        state = PrivilegedCaptureState.ERROR
+        pendingStart = null
+        LsfgLog.e(TAG, message)
+        errorListener?.onError(message)
     }
 
     private data class StartArgs(

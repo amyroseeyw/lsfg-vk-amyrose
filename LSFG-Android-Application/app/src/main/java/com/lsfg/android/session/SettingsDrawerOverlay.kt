@@ -173,9 +173,9 @@ class SettingsDrawerOverlay(
         handleWidthPx = dp(5)
         handleHeightPx = dp(68)
         iconSizePx = dp(48)
-        panelWidthPx = minOf(dp(340), (screenW * 0.85f).toInt())
-        panelHeightPx = minOf(dp(340), (screenH * 0.85f).toInt())
-        panelMarginPx = dp(12)
+        panelWidthPx = minOf(dp(336), (screenW * 0.84f).toInt())
+        panelHeightPx = minOf(dp(440), (screenH * 0.86f).toInt())
+        panelMarginPx = dp(8)
         drawerEdge = prefs.drawerEdge
         // Initial icon position: stick it to the right edge, vertically centred.
         iconX = screenW - iconSizePx - dp(8)
@@ -190,8 +190,11 @@ class SettingsDrawerOverlay(
         }
 
         val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            // The collapsed window is deliberately small. Touches outside its
+            // actual bounds, including system-gesture edges, must go to the
+            // underlying game/System UI rather than making this overlay modal.
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
         // Start narrow so only the entry affordance captures touches. When the user opens
@@ -310,7 +313,7 @@ class SettingsDrawerOverlay(
 
         val panel = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setPadding(dp(14), dp(14), dp(14), dp(14))
         }
 
         // Header
@@ -323,7 +326,7 @@ class SettingsDrawerOverlay(
             TextView(ctx).apply {
                 text = "LSFG"
                 setTextColor(COLOR_ON_SURFACE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                 typeface = android.graphics.Typeface.create(typeface, android.graphics.Typeface.BOLD)
                 val lp = LinearLayout.LayoutParams(
                     0,
@@ -335,9 +338,9 @@ class SettingsDrawerOverlay(
         )
         val closeBtn = ImageView(ctx).apply {
             setImageDrawable(crossDrawable())
-            val sz = dp(36)
+            val sz = dp(32)
             layoutParams = LinearLayout.LayoutParams(sz, sz)
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(7), dp(7), dp(7), dp(7))
             isClickable = true
             isFocusable = true
             setOnClickListener { animateTo(0f) }
@@ -345,7 +348,7 @@ class SettingsDrawerOverlay(
         header.addView(closeBtn)
         panel.addView(header)
 
-        panel.addView(sectionSpacer(12))
+        panel.addView(sectionSpacer(8))
 
         // ---- Frame Generation (expanded by default so drawer shows content on first open) ----
         val frameGenSection = collapsibleSection(panel, "FRAME GENERATION", initiallyExpanded = true)
@@ -537,7 +540,7 @@ class SettingsDrawerOverlay(
             prefs.setDrawerEdge(it)
         })
 
-        panel.addView(sectionSpacer(20))
+        panel.addView(sectionSpacer(12))
 
         val stopBtn = Button(ctx).apply {
             text = "End session"
@@ -892,11 +895,9 @@ class SettingsDrawerOverlay(
             cornerRadius = dp(3).toFloat()
         }
         val bgInset = android.graphics.drawable.InsetDrawable(bg, 0, dp(10), 0, dp(10))
-        val progress = GradientDrawable(
-            GradientDrawable.Orientation.LEFT_RIGHT,
-            intArrayOf(COLOR_ACCENT_DEEP, COLOR_PRIMARY),
-        ).apply {
+        val progress = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
+            setColor(COLOR_PRIMARY)
             cornerRadius = dp(3).toFloat()
         }
         val progressScale = android.graphics.drawable.ScaleDrawable(
@@ -1020,7 +1021,9 @@ class SettingsDrawerOverlay(
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = dp(10).toFloat()
                 }
-                setPadding(dp(4), dp(4), dp(4), dp(4))
+                minimumHeight = dp(30)
+                minimumWidth = 0
+                setPadding(dp(3), dp(2), dp(3), dp(2))
             }
             presetBtns.add(btn)
             presetRow.addView(
@@ -1112,7 +1115,9 @@ class SettingsDrawerOverlay(
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = dp(10).toFloat()
                 }
-                setPadding(dp(4), dp(4), dp(4), dp(4))
+                minimumHeight = dp(30)
+                minimumWidth = 0
+                setPadding(dp(3), dp(2), dp(3), dp(2))
                 setOnClickListener {
                     prefs.setVsyncRefreshOverride(option)
                     paintRefreshChips(option)
@@ -1564,7 +1569,7 @@ class SettingsDrawerOverlay(
         val header = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+            setPadding(0, dp(8), 0, dp(8))
             isClickable = true
             isFocusable = true
             // Subtle ripple on tap to hint at interactivity; stays on-brand because the body will
@@ -1655,7 +1660,7 @@ class SettingsDrawerOverlay(
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4), 0, dp(8))
+            setPadding(0, dp(2), 0, dp(6))
         }
         val items = listOf(
             DrawerEdge.LEFT to "Left",
@@ -1682,7 +1687,9 @@ class SettingsDrawerOverlay(
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = dp(10).toFloat()
                 }
-                setPadding(dp(4), dp(4), dp(4), dp(4))
+                minimumHeight = dp(30)
+                minimumWidth = 0
+                setPadding(dp(3), dp(2), dp(3), dp(2))
                 stateListAnimator = null
                 setOnClickListener {
                     onSelected(edge)
@@ -1705,13 +1712,13 @@ class SettingsDrawerOverlay(
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(4))
+            setPadding(0, 0, 0, dp(2))
         }
         row.addView(
             TextView(ctx).apply {
                 text = labelText
                 setTextColor(COLOR_ON_SURFACE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             },
         )
@@ -1721,7 +1728,7 @@ class SettingsDrawerOverlay(
                 setColor(COLOR_CHIP_BG)
                 cornerRadius = dp(8).toFloat()
             }
-            setPadding(dp(10), dp(3), dp(10), dp(3))
+            setPadding(dp(8), dp(2), dp(8), dp(2))
             addView(valueView)
         }
         row.addView(chip)
@@ -1732,11 +1739,11 @@ class SettingsDrawerOverlay(
         val row = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, dp(10))
+            setPadding(0, dp(7), 0, dp(7))
         }
         val lbl = TextView(ctx).apply {
             setTextColor(COLOR_ON_SURFACE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             text = label
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
@@ -1819,6 +1826,8 @@ class SettingsDrawerOverlay(
                     text = label
                     isAllCaps = false
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    minimumHeight = dp(30)
+                    minimumWidth = 0
                     setTextColor(if (preset == initial) COLOR_PANEL_BG else COLOR_ON_SURFACE)
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.RECTANGLE
@@ -1862,6 +1871,8 @@ class SettingsDrawerOverlay(
                 text = label
                 isAllCaps = false
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                minimumHeight = dp(30)
+                minimumWidth = 0
                 setTextColor(if (stage == initial) COLOR_PANEL_BG else COLOR_ON_SURFACE)
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
@@ -1926,6 +1937,8 @@ class SettingsDrawerOverlay(
                     text = label
                     isAllCaps = false
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                    minimumHeight = dp(30)
+                    minimumWidth = 0
                     setTextColor(if (method == initial) COLOR_PANEL_BG else COLOR_ON_SURFACE)
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.RECTANGLE
@@ -2247,10 +2260,11 @@ class SettingsDrawerOverlay(
         private const val COLOR_PRIMARY = 0xFF7FE3FF.toInt()
         private const val COLOR_ACCENT_DEEP = 0xFF4AA8CC.toInt()
         private const val COLOR_ON_SURFACE = 0xFFE2E8EC.toInt()
-        private const val COLOR_PANEL_BG = 0xF0141B20.toInt()
-        private const val COLOR_PANEL_STROKE = 0x33FFFFFF.toInt()
-        private const val COLOR_DIVIDER = 0x1AFFFFFF
-        private const val COLOR_TRACK_BG = 0xFF232D34.toInt()
+        // A nearly opaque OLED panel gives the game context while keeping controls legible.
+        private const val COLOR_PANEL_BG = 0xE6000000.toInt()
+        private const val COLOR_PANEL_STROKE = 0x247FE3FF
+        private const val COLOR_DIVIDER = 0x16FFFFFF
+        private const val COLOR_TRACK_BG = 0xFF182126.toInt()
         private const val COLOR_CHIP_BG = 0x337FE3FF
         private const val COLOR_STOP_BG = 0xFF2A1519.toInt()
         private const val COLOR_STOP_STROKE = 0x66FF8FA3.toInt()

@@ -49,30 +49,36 @@ class ShizukuCaptureUserService : IShizukuCaptureService.Stub() {
         periodMs: Long,
         callback: IShizukuFrameCallback,
     ) {
-        val capture = runCatching { PrivilegedScreenCapture(width, height, targetUid) }
+        Log.i(
+            TAG,
+            "SHIZUKU_START uid=${android.os.Process.myUid()} pid=${android.os.Process.myPid()} " +
+                "targetUid=$targetUid sdk=${android.os.Build.VERSION.SDK_INT} serviceVersion=$USER_SERVICE_VERSION",
+        )
+        val capture = runCatching { PrivilegedScreenCapture(width, height, targetUid, "SHIZUKU") }
             .getOrElse { e ->
                 Log.w(TAG, "Unable to initialize privileged capture", e)
-                callback.onError("Shizuku capture unavailable: ${e.message ?: e.javaClass.simpleName}")
+                callback.onError("SHIZUKU_ERROR capture init: ${e.message ?: e.javaClass.simpleName}")
                 running.set(false)
                 return
             }
 
         var lastFrameNs = 0L
         val targetPeriodNs = periodMs * 1_000_000L
-        var frameLogCount = 0
+        var firstFrame = true
         while (running.get()) {
             val started = SystemClock.uptimeMillis()
             val hb = runCatching { capture.captureHardwareBuffer() }
                 .onFailure {
                     Log.w(TAG, "captureHardwareBuffer failed", it)
-                    callback.onError("Shizuku capture failed: ${it.message ?: it.javaClass.simpleName}")
+                    callback.onError("SHIZUKU_ERROR capture: ${it.message ?: it.javaClass.simpleName}")
+                    running.set(false)
                 }
                 .getOrNull()
 
             if (hb != null) {
-                if (frameLogCount < 8) {
-                    frameLogCount++
-                    Log.i(TAG, "captured frame #$frameLogCount uid=$targetUid ${hb.width}x${hb.height} fmt=${hb.format}")
+                if (firstFrame) {
+                    firstFrame = false
+                    Log.i(TAG, "SHIZUKU_FIRST_HARDWAREBUFFER ${hb.width}x${hb.height} fmt=${hb.format}")
                 }
                 val timestampNs = System.nanoTime()
                 val frameTimeNs = if (lastFrameNs > 0L) timestampNs - lastFrameNs else 0L
@@ -83,6 +89,7 @@ class ShizukuCaptureUserService : IShizukuCaptureService.Stub() {
                     callback.onFrame(hb, timestampNs)
                 } catch (t: Throwable) {
                     Log.w(TAG, "frame callback failed", t)
+                    callback.onError("SHIZUKU_ERROR callback: ${t.message ?: t.javaClass.simpleName}")
                     running.set(false)
                 } finally {
                     runCatching { hb.close() }
@@ -99,10 +106,15 @@ class ShizukuCaptureUserService : IShizukuCaptureService.Stub() {
                 }
             }
         }
+        Log.i(TAG, "SHIZUKU_STOP")
     }
 
 
     companion object {
         private const val TAG = "ShizukuUserCapture"
+
+        // Independent from versionCode: Shizuku uses this value to replace a
+        // cached UserService after its capture implementation changes.
+        const val USER_SERVICE_VERSION = 3
     }
 }

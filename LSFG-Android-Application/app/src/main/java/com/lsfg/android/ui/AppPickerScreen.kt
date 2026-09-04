@@ -100,7 +100,7 @@ fun AppPickerScreen(nav: NavHostController) {
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 20.dp),
     ) {
         LsfgTopBar(
@@ -139,7 +139,7 @@ fun AppPickerScreen(nav: NavHostController) {
                 }
             },
             singleLine = true,
-            shape = MaterialTheme.shapes.small,
+            shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = LsfgPrimary,
                 unfocusedBorderColor = MaterialTheme.colorScheme.outline,

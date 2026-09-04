@@ -94,7 +94,7 @@ fun ParamsFrameGenPacingScreen(nav: NavHostController) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -239,7 +239,7 @@ fun ParamsImageQualityScreen(nav: NavHostController) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -553,7 +553,7 @@ fun OverlayDisplayScreen(nav: NavHostController) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {

@@ -48,7 +48,7 @@ fun LegalScreen(nav: NavHostController) {
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 20.dp),
     ) {
         LsfgTopBar(
@@ -63,8 +63,8 @@ fun LegalScreen(nav: NavHostController) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
-                IconBadge(icon = Icons.Filled.Gavel, tint = LsfgStatusWarn, size = 56.dp)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                IconBadge(icon = Icons.Filled.Gavel, tint = LsfgStatusWarn, size = 40.dp)
             }
             LsfgCard(accent = true) {
                 Text(

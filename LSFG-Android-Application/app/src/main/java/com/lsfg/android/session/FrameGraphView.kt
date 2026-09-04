@@ -2,7 +2,6 @@ package com.lsfg.android.session
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.TypedValue
@@ -26,62 +25,58 @@ class FrameGraphView(ctx: Context) : View(ctx) {
     private var head = 0
     private var filled = 0
 
-    private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xB0000000.toInt()
-        style = Paint.Style.FILL
-    }
     private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x30FFFFFF
+        color = 0x20FFFFFF
         strokeWidth = dp(1f)
         style = Paint.Style.STROKE
     }
     private val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xA0FFFFFF.toInt()
-        textSize = sp(10f)
+        color = 0xA6FFFFFF.toInt()
+        textSize = sp(7f)
     }
 
     // Real captures: Green
     private val realPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF34D399.toInt() // green
-        strokeWidth = dp(2f)
+        strokeWidth = dp(1.25f)
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
     private val realFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x1534D399
+        color = 0x0D34D399
         style = Paint.Style.FILL
     }
 
     // LSFG Generated frames: Orange/Amber
     private val genPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFFB923C.toInt() // orange/amber
-        strokeWidth = dp(2f)
+        strokeWidth = dp(1.25f)
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
     private val genFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x15FB923C
+        color = 0x0DFB923C
         style = Paint.Style.FILL
     }
 
     // Total displayed frames: Cyan/Blue
     private val totalPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF60A5FA.toInt() // cyan
-        strokeWidth = dp(2f)
+        strokeWidth = dp(1.25f)
         style = Paint.Style.STROKE
         strokeJoin = Paint.Join.ROUND
         strokeCap = Paint.Cap.ROUND
     }
     private val totalFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x1560A5FA
+        color = 0x0D60A5FA
         style = Paint.Style.FILL
     }
 
     private val legendPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = sp(10f)
+        color = 0xBFFFFFFF.toInt()
+        textSize = sp(7f)
     }
 
     private val path = Path()
@@ -110,12 +105,12 @@ class FrameGraphView(ctx: Context) : View(ctx) {
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val h = height.toFloat()
-        canvas.drawRoundRect(0f, 0f, w, h, dp(6f), dp(6f), bgPaint)
-
-        val padL = dp(28f)
-        val padR = dp(6f)
-        val padT = dp(14f)
-        val padB = dp(14f)
+        // Transparent graph: it is now a child of the compact FPS HUD rather
+        // than an independently framed panel.
+        val padL = dp(16f)
+        val padR = dp(2f)
+        val padT = dp(3f)
+        val padB = dp(8f)
         val plotW = w - padL - padR
         val plotH = h - padT - padB
 
@@ -136,13 +131,12 @@ class FrameGraphView(ctx: Context) : View(ctx) {
             if (maxY <= b) { maxY = b; break }
         }
 
-        // Gridlines at 1/2 and max.
+        // Gridlines at 1/2 and max. Scale and sample math are intentionally unchanged.
         canvas.drawLine(padL, padT, padL + plotW, padT, gridPaint)
         canvas.drawLine(padL, padT + plotH / 2f, padL + plotW, padT + plotH / 2f, gridPaint)
         canvas.drawLine(padL, padT + plotH, padL + plotW, padT + plotH, gridPaint)
-        canvas.drawText("${maxY.toInt()}", dp(4f), padT + sp(4f), axisPaint)
-        canvas.drawText("${(maxY / 2).toInt()}", dp(4f), padT + plotH / 2f + sp(4f), axisPaint)
-        canvas.drawText("0", dp(4f), padT + plotH + sp(4f), axisPaint)
+        canvas.drawText("${maxY.toInt()}", 0f, padT + sp(3f), axisPaint)
+        canvas.drawText("${(maxY / 2).toInt()}", 0f, padT + plotH / 2f + sp(3f), axisPaint)
 
         if (n < 2) {
             drawLegend(canvas, padL, h)
@@ -180,24 +174,24 @@ class FrameGraphView(ctx: Context) : View(ctx) {
     }
 
     private fun drawLegend(canvas: Canvas, padL: Float, h: Float) {
-        val y = h - dp(4f)
-        val swatchW = dp(10f)
-        val swatchH = dp(3f)
+        val y = h - dp(1f)
+        val swatchW = dp(5f)
+        val swatchH = dp(1f)
         var x = padL
 
         // Real: Green
         canvas.drawRect(x, y - swatchH, x + swatchW, y, realPaint)
-        canvas.drawText("real", x + swatchW + dp(3f), y, legendPaint)
-        x += swatchW + dp(3f) + legendPaint.measureText("real") + dp(10f)
+        canvas.drawText("R", x + swatchW + dp(2f), y, legendPaint)
+        x += swatchW + dp(2f) + legendPaint.measureText("R") + dp(6f)
 
         // Generated: Orange
         canvas.drawRect(x, y - swatchH, x + swatchW, y, genPaint)
-        canvas.drawText("generated", x + swatchW + dp(3f), y, legendPaint)
-        x += swatchW + dp(3f) + legendPaint.measureText("generated") + dp(10f)
+        canvas.drawText("G", x + swatchW + dp(2f), y, legendPaint)
+        x += swatchW + dp(2f) + legendPaint.measureText("G") + dp(6f)
 
         // Total: Cyan
         canvas.drawRect(x, y - swatchH, x + swatchW, y, totalPaint)
-        canvas.drawText("total", x + swatchW + dp(3f), y, legendPaint)
+        canvas.drawText("T", x + swatchW + dp(2f), y, legendPaint)
     }
 
     private fun dp(v: Float): Float =

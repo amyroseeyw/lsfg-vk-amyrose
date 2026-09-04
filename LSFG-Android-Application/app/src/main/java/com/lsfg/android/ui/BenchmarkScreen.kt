@@ -131,7 +131,7 @@ fun BenchmarkScreen(nav: NavHostController) {
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 20.dp),
     ) {
         LsfgTopBar(
@@ -147,7 +147,7 @@ fun BenchmarkScreen(nav: NavHostController) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                IconBadge(icon = Icons.Filled.Speed, tint = LsfgPrimary, size = 56.dp)
+                IconBadge(icon = Icons.Filled.Speed, tint = LsfgPrimary, size = 40.dp)
             }
 
             LsfgCard {

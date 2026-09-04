@@ -245,7 +245,7 @@ fun TutorialScreen(nav: NavHostController) {
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .padding(bottom = 20.dp),
     ) {
         LsfgTopBar(
@@ -257,24 +257,22 @@ fun TutorialScreen(nav: NavHostController) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             ) {
-                IconBadge(icon = Icons.Filled.School, tint = LsfgPrimary, size = 56.dp)
+                IconBadge(icon = Icons.Filled.School, tint = LsfgPrimary, size = 40.dp)
             }
 
-            LsfgCard(accent = true) {
+            LsfgCard(accent = true, contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp)) {
                 Text(
                     text = stringResource(R.string.tutorial_subtitle).uppercase(),
                     style = MaterialTheme.typography.labelSmall,
                     color = LsfgPrimary,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = stringResource(R.string.tutorial_intro),
                     style = MaterialTheme.typography.bodyMedium,
@@ -349,33 +347,39 @@ private fun TutorialStepCard(
     step: TutorialStep,
     onImageClick: (Int) -> Unit,
 ) {
-    LsfgCard {
+    LsfgCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(14.dp)) {
         Text(
             text = "STEP ${index.toString().padStart(2, '0')}",
             style = MaterialTheme.typography.labelSmall,
             color = LsfgPrimary,
         )
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             text = step.title,
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
         )
         if (step.image != null) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             Image(
                 painter = painterResource(id = step.image),
                 contentDescription = step.title,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                    // Fit preserves the screenshot bitmap rather than cropping it into
+                    // a fixed card ratio; portrait captures stay comfortably narrow.
+                    .aspectRatio(
+                        painterResource(id = step.image).intrinsicSize.let { size ->
+                            if (size.width > 0f && size.height > 0f) size.width / size.height else 16f / 9f
+                        },
+                    )
                     .clip(RoundedCornerShape(12.dp))
                     .clickable { onImageClick(step.image) },
             )
         }
         if (step.description.isNotBlank()) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 text = step.description,
                 style = MaterialTheme.typography.bodyMedium,

@@ -22,19 +22,21 @@ val LsfgOnError = Color(0xFF690005)
 val LsfgErrorContainer = Color(0xFF93000A)
 val LsfgOnErrorContainer = Color(0xFFFFDAD6)
 
-val LsfgBackground = Color(0xFF0B0F12)
+// The app canvas is deliberately true OLED black.  Surfaces below retain the
+// original blue-charcoal family so hierarchy never depends on a new palette.
+val LsfgBackground = Color(0xFF000000)
 val LsfgOnBackground = Color(0xFFE2E8EC)
 
 val LsfgSurface = Color(0xFF12181C)
 val LsfgOnSurface = Color(0xFFE2E8EC)
 val LsfgOnSurfaceVariant = Color(0xFFA9B4BD)
 
-val LsfgSurfaceDim = Color(0xFF0B0F12)
+val LsfgSurfaceDim = Color(0xFF000000)
 val LsfgSurfaceBright = Color(0xFF2A343B)
-val LsfgSurfaceContainerLowest = Color(0xFF080B0E)
-val LsfgSurfaceContainerLow = Color(0xFF0F1418)
-val LsfgSurfaceContainer = Color(0xFF161D22)
-val LsfgSurfaceContainerHigh = Color(0xFF1C252B)
+val LsfgSurfaceContainerLowest = Color(0xFF060809)
+val LsfgSurfaceContainerLow = Color(0xFF0B1013)
+val LsfgSurfaceContainer = Color(0xFF11181C)
+val LsfgSurfaceContainerHigh = Color(0xFF182126)
 val LsfgSurfaceContainerHighest = Color(0xFF232D34)
 
 val LsfgOutline = Color(0xFF3A4750)

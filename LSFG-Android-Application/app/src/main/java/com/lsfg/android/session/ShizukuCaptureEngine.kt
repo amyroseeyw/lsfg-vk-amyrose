@@ -14,6 +14,7 @@ import com.lsfg.android.BuildConfig
 import com.lsfg.android.shizuku.IShizukuCaptureService
 import com.lsfg.android.shizuku.IShizukuFrameCallback
 import rikka.shizuku.Shizuku
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ShizukuCaptureEngine(
     private val ctx: Context,
@@ -28,6 +29,8 @@ class ShizukuCaptureEngine(
     private var pendingStart: StartArgs? = null
     @Volatile
     private var errorListener: ErrorListener? = null
+    @Volatile
+    private var activeListener: (() -> Unit)? = null
     @Volatile
     private var metricsOnly: Boolean = false
     @Volatile
@@ -51,23 +54,44 @@ class ShizukuCaptureEngine(
     private var lastPostedCount: Long = 0L
     private var graphRealEma: Float = 0f
     private var graphGenEma: Float = 0f
+    @Volatile internal var state: PrivilegedCaptureState = PrivilegedCaptureState.IDLE
+        private set
+    private val binding = AtomicBoolean(false)
+    private val firstFrameToNative = AtomicBoolean(false)
+    private val errorReported = AtomicBoolean(false)
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder?) {
+            binding.set(false)
             service = binder?.takeIf { it.pingBinder() }?.let { IShizukuCaptureService.Stub.asInterface(it) }
+            val svc = service
+            if (svc == null) {
+                fail("SHIZUKU_ERROR bind returned no live service")
+                return
+            }
+            val description = runCatching { svc.describeBackend() }
+                .getOrElse { "describeBackend failed: ${it.message ?: it.javaClass.simpleName}" }
+            LsfgLog.i(TAG, "SHIZUKU_BIND_OK $description")
             val start = pendingStart
             if (start != null) {
-                startCapture(start.targetPackage, start.width, start.height, start.maxFps)
+                startCaptureInternal(start.targetPackage, start.width, start.height, start.maxFps)
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
             service = null
+            if (state != PrivilegedCaptureState.STOPPING && state != PrivilegedCaptureState.IDLE) {
+                fail("SHIZUKU_ERROR service disconnected")
+            }
         }
     }
 
     fun setErrorListener(listener: ErrorListener?) {
         errorListener = listener
+    }
+
+    fun setActiveListener(listener: (() -> Unit)?) {
+        activeListener = listener
     }
 
     fun setFpsListener(listener: CaptureEngine.FpsListener?) {
@@ -95,10 +119,13 @@ class ShizukuCaptureEngine(
     }
 
     private fun startCaptureInternal(targetPackage: String, width: Int, height: Int, maxFps: Int) {
+        if (state == PrivilegedCaptureState.ERROR || state == PrivilegedCaptureState.STOPPING) return
+        state = PrivilegedCaptureState.STARTING
+        LsfgLog.i(TAG, "SHIZUKU_START permission=${isReady()} sdk=${android.os.Build.VERSION.SDK_INT}")
         val targetUid = runCatching {
             ctx.packageManager.getApplicationInfo(targetPackage, 0).uid
         }.getOrElse {
-            errorListener?.onError("Target package not found: $targetPackage")
+            fail("SHIZUKU_ERROR target package not found: $targetPackage")
             return
         }
 
@@ -109,22 +136,28 @@ class ShizukuCaptureEngine(
             bind()
             return
         }
+        state = PrivilegedCaptureState.CAPTURE_STARTING
         runCatching {
             svc.startCapture(targetUid, width, height, maxFps, frameCallback)
+            pendingStart = null
             LsfgLog.i(TAG, "Shizuku ${if (metricsOnly) "metrics" else "capture"} started package=$targetPackage uid=$targetUid ${width}x${height}")
         }.onFailure {
             LsfgLog.w(TAG, "Shizuku startCapture failed", it)
-            errorListener?.onError("Shizuku start failed: ${it.message ?: it.javaClass.simpleName}")
+            fail("SHIZUKU_ERROR startCapture: ${it.message ?: it.javaClass.simpleName}")
         }
     }
 
     fun stop() {
+        state = PrivilegedCaptureState.STOPPING
         pendingStart = null
         stopFpsCounter()
         stopFrameGraph()
         runCatching { service?.stopCapture() }
         runCatching { Shizuku.unbindUserService(userServiceArgs(), connection, true) }
         service = null
+        binding.set(false)
+        state = PrivilegedCaptureState.IDLE
+        LsfgLog.i(TAG, "SHIZUKU_STOP")
     }
 
     fun pauseCapture() {
@@ -240,14 +273,18 @@ class ShizukuCaptureEngine(
 
     private fun bind() {
         if (!isReady()) {
-            errorListener?.onError("Shizuku is not running or permission is missing")
+            fail("SHIZUKU_PERMISSION_FAIL service unavailable or permission missing")
             return
         }
+        if (!binding.compareAndSet(false, true)) return
+        state = PrivilegedCaptureState.BINDING
         runCatching {
             Shizuku.bindUserService(userServiceArgs(), connection)
+            LsfgLog.i(TAG, "SHIZUKU_BINDING")
         }.onFailure {
+            binding.set(false)
             LsfgLog.w(TAG, "bindUserService failed", it)
-            errorListener?.onError("Shizuku bind failed: ${it.message ?: it.javaClass.simpleName}")
+            fail("SHIZUKU_BIND_FAIL: ${it.message ?: it.javaClass.simpleName}")
         }
     }
 
@@ -258,7 +295,7 @@ class ShizukuCaptureEngine(
             .daemon(false)
             .processNameSuffix("capture")
             .debuggable(BuildConfig.DEBUG)
-            .version(BuildConfig.VERSION_CODE)
+            .version(ShizukuCaptureUserService.USER_SERVICE_VERSION)
             .tag("lsfg_capture")
 
     private val frameCallback = object : IShizukuFrameCallback.Stub() {
@@ -268,16 +305,22 @@ class ShizukuCaptureEngine(
             try {
                 if (!metricsOnly) {
                     NativeBridge.pushFrame(buffer, timestampNs)
+                    if (firstFrameToNative.compareAndSet(false, true)) {
+                        state = PrivilegedCaptureState.ACTIVE
+                        LsfgLog.i(TAG, "SHIZUKU_FIRST_FRAME_TO_NATIVE")
+                        activeListener?.invoke()
+                    }
                 }
             } catch (t: Throwable) {
                 LsfgLog.w(TAG, "pushFrame from Shizuku failed", t)
+                fail("SHIZUKU_ERROR pushFrame: ${t.message ?: t.javaClass.simpleName}")
             } finally {
                 runCatching { buffer.close() }
             }
         }
 
         override fun onError(message: String?) {
-            errorListener?.onError(message ?: "Unknown Shizuku capture error")
+            fail(message ?: "SHIZUKU_ERROR unknown capture error")
         }
 
         override fun onFrameMetrics(timestampNs: Long, frameTimeNs: Long, pacingJitterNs: Long) {
@@ -289,6 +332,14 @@ class ShizukuCaptureEngine(
                 )
             }
         }
+    }
+
+    private fun fail(message: String) {
+        if (!errorReported.compareAndSet(false, true)) return
+        state = PrivilegedCaptureState.ERROR
+        pendingStart = null
+        LsfgLog.e(TAG, message)
+        errorListener?.onError(message)
     }
 
     private data class StartArgs(

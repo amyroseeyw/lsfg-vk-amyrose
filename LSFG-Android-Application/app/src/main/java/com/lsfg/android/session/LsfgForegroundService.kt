@@ -286,17 +286,22 @@ class LsfgForegroundService : Service() {
         targetPkgPending = targetPkg
         initialCaptureStarted = false
 
-        // Tell the Automatic Overlay controller that the full session has started:
-        // it hides the floating dot until we tear down again.
-        AutoOverlayController.onSessionStarted(targetPkg)
+        // MediaProjection becomes active as soon as its capture is armed. A
+        // privileged backend is not active until a real HardwareBuffer reaches
+        // NativeBridge, so keep its launcher state pending until that callback.
+        if (!isPrivilegedCapture) {
+            AutoOverlayController.onSessionStarted(targetPkg)
+        }
 
         val cap = if (proj != null) CaptureEngine(this, proj) else null
         capture = cap
         val shizukuCap = if (captureSource == CaptureSource.SHIZUKU) {
             ShizukuCaptureEngine(this).also { engine ->
                 engine.setErrorListener { msg ->
-                    LsfgLog.w(TAG, msg)
-                    ov.updateStatus(msg)
+                    failPrivilegedBackend("SHIZUKU", msg)
+                }
+                engine.setActiveListener {
+                    mainHandler.post { AutoOverlayController.onSessionStarted(targetPkg) }
                 }
             }
         } else null
@@ -304,8 +309,10 @@ class LsfgForegroundService : Service() {
         val rootCap = if (captureSource == CaptureSource.ROOT) {
             RootCaptureEngine(this).also { engine ->
                 engine.setErrorListener { msg ->
-                    LsfgLog.w(TAG, msg)
-                    ov.updateStatus(msg)
+                    failPrivilegedBackend("ROOT", msg)
+                }
+                engine.setActiveListener {
+                    mainHandler.post { AutoOverlayController.onSessionStarted(targetPkg) }
                 }
             }
         } else null
@@ -921,6 +928,25 @@ class LsfgForegroundService : Service() {
         runCatching { startActivity(launch) }
             .onSuccess { LsfgLog.i(TAG, "startActivity($pkg) returned") }
             .onFailure { LsfgLog.e(TAG, "Launching $pkg failed", it) }
+    }
+
+    private fun failPrivilegedBackend(backend: String, message: String) {
+        LsfgLog.e(TAG, "$backend backend failed: $message")
+        if (shuttingDown) return
+        mainHandler.post {
+            if (shuttingDown) return@post
+            pendingPrivilegedVideoStart = null
+            // Keep the established overlay visible just long enough for the
+            // concrete backend error to be observable. This does not arm a
+            // fallback capture and normal teardown still owns all resources.
+            overlay?.updateStatus("$backend failed: $message")
+            // A privileged mode must never remain as an apparently-running
+            // overlay after capture fails. stopSelf performs the normal source
+            // teardown and does not create a MediaProjection fallback.
+            mainHandler.postDelayed({
+                if (!shuttingDown) stopSelf()
+            }, 1500L)
+        }
     }
 
     private fun startShizukuMetrics(

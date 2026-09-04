@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Region
 import android.graphics.SurfaceTexture
+import android.graphics.Typeface
 import android.os.Build
 import android.util.DisplayMetrics
 import android.util.Log
@@ -54,6 +55,7 @@ class OverlayManager(private val ctx: Context) {
 
     private var root: FrameLayout? = null
     private var textureView: TextureView? = null
+    private var hudContainer: LinearLayout? = null
     private var producerSurface: Surface? = null
     private var hostWindowManager: WindowManager? = null
     private var fpsView: TextView? = null
@@ -164,7 +166,6 @@ class OverlayManager(private val ctx: Context) {
         val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
                 WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
 
@@ -183,13 +184,10 @@ class OverlayManager(private val ctx: Context) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
-            @Suppress("DEPRECATION")
-            systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                    or View.SYSTEM_UI_FLAG_FULLSCREEN
-                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+            // This is a system overlay, not the target activity. Do not request
+            // immersive/fullscreen System UI from it: doing so can hide or make
+            // the status/navigation bars difficult to reveal while the session
+            // is active. The visual output still uses the physical display size.
             // PRIVATE_FLAG_EXCLUDE_FROM_SCREEN_CAPTURE (0x00080000, API 31+): instructs
             // WMS to tell SurfaceFlinger to skip this window in VirtualDisplay/screenshot
             // composition at window-creation time — no SurfaceControl timing race.
@@ -280,12 +278,25 @@ class OverlayManager(private val ctx: Context) {
                 }
             }
         }
+        // A single transparent HUD host contains the existing metrics and graph
+        // views. Their providers, sampling rates, and visibility toggles remain
+        // independent; only their presentation is consolidated.
+        val hud = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            clipChildren = false
+            clipToPadding = false
+        }
         val fps = TextView(ctx).apply {
             text = ""
             setTextColor(Color.WHITE)
-            setBackgroundColor(0x80000000.toInt())
-            textSize = 14f
-            setPadding(16, 8, 16, 8)
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
+            textSize = 10f
+            includeFontPadding = false
+            setLineSpacing(metrics.density * 1f, 1f)
+            // Keep the game visible behind the HUD: the text shadow is its only
+            // readability treatment, with no opaque panel or blur.
+            setShadowLayer(metrics.density * 1.5f, 0f, metrics.density, 0xC0000000.toInt())
             visibility = View.GONE
         }
         layout.addView(
@@ -295,33 +306,34 @@ class OverlayManager(private val ctx: Context) {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        layout.addView(
-            fps,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.START,
-            ).apply {
-                topMargin = 24
-                leftMargin = 24
-            },
-        )
-
         val graph = FrameGraphView(ctx).apply {
             visibility = View.GONE
         }
-        val graphWidthPx = (metrics.density * 220f).toInt()
-        val graphHeightPx = (metrics.density * 80f).toInt()
-        layout.addView(
+        hud.addView(
+            fps,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        hud.addView(
             graph,
+            LinearLayout.LayoutParams(
+                (metrics.density * HUD_GRAPH_WIDTH_DP).toInt(),
+                (metrics.density * HUD_GRAPH_HEIGHT_DP).toInt(),
+            ).apply {
+                topMargin = (metrics.density * 2f).toInt()
+            },
+        )
+        layout.addView(
+            hud,
             FrameLayout.LayoutParams(
-                graphWidthPx,
-                graphHeightPx,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.START,
             ).apply {
-                // Position just below the FPS text so both stay in the top-left cluster.
-                topMargin = 112
-                leftMargin = 24
+                topMargin = (metrics.density * HUD_MARGIN_DP).toInt()
+                leftMargin = (metrics.density * HUD_MARGIN_DP).toInt()
             },
         )
 
@@ -399,6 +411,7 @@ class OverlayManager(private val ctx: Context) {
         insetsListener = installEmptyTouchableRegion(layout)
         internalInsetsListener = installEmptyInternalInsets(layout)
         root = layout
+        hudContainer = hud
         fpsView = fps
         graphView = graph
         benchmarkPanel = benchPanel
@@ -439,14 +452,28 @@ class OverlayManager(private val ctx: Context) {
     }
 
     fun setFpsVisible(visible: Boolean) {
-        fpsView?.post { fpsView?.visibility = if (visible) View.VISIBLE else View.GONE }
+        fpsView?.post {
+            fpsView?.visibility = if (visible) View.VISIBLE else View.GONE
+            syncHudVisibility()
+        }
     }
 
     fun updateFps(capturedFps: Float, postedFps: Float) {
         val v = fpsView ?: return
         val queueMs = runCatching { NativeBridge.getAverageQueueMs() }.getOrDefault(0.0)
         val latencyMs = runCatching { NativeBridge.getAverageLatencyMs() }.getOrDefault(0.0)
-        val text = "real ${"%.1f".format(capturedFps)} fps · total ${"%.1f".format(postedFps)} fps (latency: ${"%.1f".format(latencyMs)} ms · queue: ${"%.1f".format(queueMs)} ms)"
+        // Same counters and sampling cadence as before; this only presents the
+        // existing values as a compact, fixed-width HUD.
+        val text = buildString {
+            append("LSFG")
+            append('\n')
+            append("REAL   ").append("%.1f".format(capturedFps)).append(" FPS")
+            append('\n')
+            append("TOTAL  ").append("%.1f".format(postedFps)).append(" FPS")
+            append('\n')
+            append("LAT    ").append("%.1f".format(latencyMs)).append(" ms  ·  Q ")
+            append("%.1f".format(queueMs)).append(" ms")
+        }
         v.post { v.text = text }
     }
 
@@ -455,6 +482,7 @@ class OverlayManager(private val ctx: Context) {
         g.post {
             g.visibility = if (visible) View.VISIBLE else View.GONE
             if (!visible) g.reset()
+            syncHudVisibility()
         }
     }
 
@@ -513,12 +541,20 @@ class OverlayManager(private val ctx: Context) {
         producerSurface = null
         root = null
         textureView = null
+        hudContainer = null
         fpsView = null
         graphView = null
         benchmarkPanel = null
         benchmarkLabel = null
         benchmarkBar = null
         hostWindowManager = null
+    }
+
+    /** There is one visual HUD, enabled when either existing presentation is enabled. */
+    private fun syncHudVisibility() {
+        val hud = hudContainer ?: return
+        val hasVisibleChild = fpsView?.visibility == View.VISIBLE || graphView?.visibility == View.VISIBLE
+        hud.visibility = if (hasVisibleChild) View.VISIBLE else View.GONE
     }
 
     /**
@@ -856,5 +892,8 @@ class OverlayManager(private val ctx: Context) {
 
     companion object {
         private const val TAG = "OverlayManager"
+        private const val HUD_MARGIN_DP = 8f
+        private const val HUD_GRAPH_WIDTH_DP = 150f
+        private const val HUD_GRAPH_HEIGHT_DP = 52f
     }
 }

@@ -129,8 +129,13 @@ class LauncherDotOverlay(
     fun show() {
         if (root != null) return
 
+        // Match the explicit Trust preference used by OverlayManager and
+        // SettingsDrawerOverlay. A connected accessibility service alone must
+        // not elevate this small launcher window above System UI.
+        val prefs = LsfgPreferences(ctx).load()
         val a11y = LsfgAccessibilityService.instance
-        val hostCtx: Context = a11y ?: ctx
+        val useTrusted = prefs.trustedOverlay && a11y != null
+        val hostCtx: Context = if (useTrusted) a11y!! else ctx
         val wm = hostCtx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         hostWm = wm
 
@@ -143,13 +148,13 @@ class LauncherDotOverlay(
         iconSizePx = dp(48)
         panelWidthPx = minOf(dp(340), (screenW * 0.85f).toInt())
         panelHeightPx = minOf(dp(340), (screenH * 0.85f).toInt())
-        drawerEdge = LsfgPreferences(ctx).load().drawerEdge
+        drawerEdge = prefs.drawerEdge
         // Icon defaults: stuck to the right edge, vertically centred.
         iconX = (screenW - iconSizePx - dp(8)).coerceAtLeast(0)
         iconY = ((screenH - iconSizePx) / 2).coerceAtLeast(0)
 
         val layoutType = when {
-            a11y != null -> WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+            useTrusted -> WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else -> @Suppress("DEPRECATION")
@@ -157,8 +162,11 @@ class LauncherDotOverlay(
         }
 
         val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            // Keep the launcher non-modal outside its small window bounds so
+            // it cannot consume game touches or system gestures away from the
+            // visible control.
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
 
         // Start narrow so only the entry affordance captures touches. When the user

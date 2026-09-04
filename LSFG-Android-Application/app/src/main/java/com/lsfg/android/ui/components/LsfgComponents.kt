@@ -41,14 +41,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.lsfg.android.ui.theme.LsfgAccentGlow
 import com.lsfg.android.ui.theme.LsfgPrimary
 import com.lsfg.android.ui.theme.LsfgStatusBad
 import com.lsfg.android.ui.theme.LsfgStatusGood
@@ -61,17 +59,16 @@ import com.lsfg.android.ui.theme.LsfgStatusWarn
 fun LsfgCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    contentPadding: PaddingValues = PaddingValues(20.dp),
+    contentPadding: PaddingValues = PaddingValues(16.dp),
     accent: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shape = MaterialTheme.shapes.medium
     val container = MaterialTheme.colorScheme.surfaceContainer
-    val border = if (accent) {
-        BorderStroke(1.dp, Brush.linearGradient(listOf(LsfgPrimary.copy(alpha = 0.5f), LsfgAccentGlow.copy(alpha = 0.15f))))
-    } else {
-        BorderStroke(1.dp, SolidColor(MaterialTheme.colorScheme.outlineVariant))
-    }
+    val border = BorderStroke(
+        1.dp,
+        SolidColor(if (accent) LsfgPrimary.copy(alpha = .42f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f)),
+    )
     if (onClick != null) {
         Card(
             onClick = onClick,
@@ -164,6 +161,7 @@ fun StatusPill(label: String, tone: StatusTone, modifier: Modifier = Modifier) {
 @Composable
 fun StepCard(
     number: Int,
+    icon: ImageVector,
     title: String,
     subtitle: String,
     status: StatusTone,
@@ -174,23 +172,19 @@ fun StepCard(
     LsfgCard(
         modifier = modifier.fillMaxWidth(),
         onClick = onClick,
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = number.toString().padStart(2, '0'),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = LsfgPrimary,
-                )
+                Icon(icon, null, tint = LsfgPrimary, modifier = Modifier.size(21.dp))
             }
-            Spacer(Modifier.size(14.dp))
+            Spacer(Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -204,7 +198,7 @@ fun StepCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Spacer(Modifier.size(12.dp))
+            Spacer(Modifier.size(8.dp))
             StatusPill(label = statusLabel, tone = status)
             Spacer(Modifier.size(8.dp))
             Icon(
@@ -251,24 +245,9 @@ fun SessionCTA(
     onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val transition = rememberInfiniteTransition(label = "cta-pulse")
-    val pulse by transition.animateFloat(
-        initialValue = 0.5f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1600),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "cta-pulse-alpha",
-    )
     val dotColor = if (running) LsfgStatusGood else MaterialTheme.colorScheme.onSurfaceVariant
-    val dotAlpha = if (running) pulse else 1f
-
-    val bgBrush = if (enabled || running) {
-        Brush.linearGradient(listOf(LsfgPrimary, LsfgAccentGlow))
-    } else {
-        SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
-    }
+    val dotAlpha = 1f
+    val buttonColor = if (enabled || running) LsfgPrimary else MaterialTheme.colorScheme.surfaceContainerHigh
     val contentColor = if (enabled || running) MaterialTheme.colorScheme.onPrimary
     else MaterialTheme.colorScheme.onSurfaceVariant
 
@@ -293,13 +272,13 @@ fun SessionCTA(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 64.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(bgBrush)
+                .heightIn(min = 52.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(buttonColor)
                 .clickable(enabled = enabled || running) {
                     if (running) onStop() else onStart()
                 }
-                .padding(horizontal = 24.dp, vertical = 18.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             contentAlignment = Alignment.Center,
         ) {
             Row(
@@ -460,8 +439,8 @@ fun LsfgSecondaryButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier,
-        shape = MaterialTheme.shapes.small,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .75f)),
     ) {
         if (leadingIcon != null) {
             Icon(
@@ -492,7 +471,7 @@ fun LsfgTopBar(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 8.dp),
+            .padding(horizontal = 0.dp, vertical = 6.dp),
     ) {
         if (onBack != null) {
             Box(
@@ -514,7 +493,7 @@ fun LsfgTopBar(
         }
         Text(
             text = title,
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
